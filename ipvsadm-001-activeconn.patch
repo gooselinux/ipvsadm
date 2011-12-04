@@ -1,0 +1,25 @@
+commit 737f3b4e995b2d1fa3e0224712a6b3f5d8ccd464
+Author: Jan Friesse <jfriesse@redhat.com>
+Date:   Mon May 3 09:55:07 2010 +0200
+
+    Don't report persistentconns as activeconns
+    
+    This fixes what appears to be a typo in the netlink client code
+    whereby the activeconns is read as activeconns and then
+    overwritten by persistentconns. The result is that the active
+    connection count reported by ipvsadm -L is wrong if the
+    code is compiled to use the netlink interface.
+
+diff --git a/libipvs/libipvs.c b/libipvs/libipvs.c
+index c1455f3..6c87da5 100644
+--- a/libipvs/libipvs.c
++++ b/libipvs/libipvs.c
+@@ -747,7 +747,7 @@ static int ipvs_dests_parse_cb(struct nl_msg *msg, void *arg)
+ 	d->entrytable[i].l_threshold = nla_get_u32(dest_attrs[IPVS_DEST_ATTR_L_THRESH]);
+ 	d->entrytable[i].activeconns = nla_get_u32(dest_attrs[IPVS_DEST_ATTR_ACTIVE_CONNS]);
+ 	d->entrytable[i].inactconns = nla_get_u32(dest_attrs[IPVS_DEST_ATTR_INACT_CONNS]);
+-	d->entrytable[i].activeconns = nla_get_u32(dest_attrs[IPVS_DEST_ATTR_PERSIST_CONNS]);
++	d->entrytable[i].persistconns = nla_get_u32(dest_attrs[IPVS_DEST_ATTR_PERSIST_CONNS]);
+ 	d->entrytable[i].af = d->af;
+ 
+ 	if (ipvs_parse_stats(&(d->entrytable[i].stats),

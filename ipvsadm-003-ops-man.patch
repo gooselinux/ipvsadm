@@ -1,0 +1,33 @@
+    One-packet Scheduler man page
+    
+    Man page documentation of One-packet scheduling options -O, --ops.
+    
+    Related: rhbz#573112
+
+diff --git a/ipvsadm.8 b/ipvsadm.8
+index 58f4d62..08a357f 100644
+--- a/ipvsadm.8
++++ b/ipvsadm.8
+@@ -37,7 +37,7 @@ ipvsadm \- Linux Virtual Server administration
+ .SH SYNOPSIS
+ .B ipvsadm -A|E -t|u|f \fIservice-address\fP [-s \fIscheduler\fP]
+ .ti 15
+-.B [-p [\fItimeout\fP]] [-M \fInetmask\fP]
++.B [-p [\fItimeout\fP]] [-O] [-M \fInetmask\fP]
+ .br
+ .B ipvsadm -D -t|u|f \fIservice-address\fP
+ .br
+@@ -401,6 +401,13 @@ port>. The real server entries are sorted in ascending order by
+ .B --nosort
+ Do not sort the list of virtual services and real servers.
+ .TP
++.B -O, --ops
++Specify that a virtual service uses one-packet scheduling. This
++option can be used only for UDP services. If this option is specified,
++all connections are created only to schedule one packet.
++Option is useful to schedule UDP packets from same client port to different
++real servers.
++.TP
+ .B -n, --numeric
+ Numeric output.  IP addresses and port numbers will be printed in
+ numeric format rather than as as host names and services respectively,

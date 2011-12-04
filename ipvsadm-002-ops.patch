@@ -1,0 +1,151 @@
+commit b7f48555acd4068225af6c3190de9998ade329c9
+Author: Jan Friesse <jfriesse@redhat.com>
+Date:   Fri Jul 2 17:37:18 2010 +0200
+
+    One Packet Scheduler support
+ 
+    Add the One-Packet Scheduler support. Feature is available only for
+    UDP connections. Uses --ops, -O option.
+ 
+    Resolves BZ#573112
+
+diff --git a/ipvsadm.c b/ipvsadm.c
+index 6b10d57..a95ec9d 100644
+--- a/ipvsadm.c
++++ b/ipvsadm.c
+@@ -181,7 +181,8 @@ static const char* cmdnames[] = {
+ #define OPT_NOSORT		0x040000
+ #define OPT_SYNCID		0x080000
+ #define OPT_EXACT		0x100000
+-#define NUMBER_OF_OPT		21
++#define OPT_ONEPACKET		0x200000
++#define NUMBER_OF_OPT		22
+ 
+ static const char* optnames[] = {
+ 	"numeric",
+@@ -205,6 +206,7 @@ static const char* optnames[] = {
+ 	"nosort",
+ 	"syncid",
+ 	"exact",
++	"ops",
+ };
+ 
+ /*
+@@ -217,21 +219,21 @@ static const char* optnames[] = {
+  */
+ static const char commands_v_options[NUMBER_OF_CMD][NUMBER_OF_OPT] =
+ {
+-	/*   -n   -c   svc  -s   -p   -M   -r   fwd  -w   -x   -y   -mc  tot  dmn  -st  -rt  thr  -pc  srt  sid  -ex */
+-/*ADD*/     {'x', 'x', '+', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*EDIT*/    {'x', 'x', '+', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*DEL*/     {'x', 'x', '+', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*FLUSH*/   {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*LIST*/    {' ', '1', '1', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', '1', '1', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+-/*ADDSRV*/  {'x', 'x', '+', 'x', 'x', 'x', '+', ' ', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*DELSRV*/  {'x', 'x', '+', 'x', 'x', 'x', '+', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*EDITSRV*/ {'x', 'x', '+', 'x', 'x', 'x', '+', ' ', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*TIMEOUT*/ {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*STARTD*/  {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' ', 'x'},
+-/*STOPD*/   {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' ', 'x'},
+-/*RESTORE*/ {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*SAVE*/    {' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+-/*ZERO*/    {'x', 'x', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++	/*   -n   -c   svc  -s   -p   -M   -r   fwd  -w   -x   -y   -mc  tot  dmn  -st  -rt  thr  -pc  srt  sid  -ex  ops*/
++/*ADD*/     {'x', 'x', '+', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' '},
++/*EDIT*/    {'x', 'x', '+', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' '},
++/*DEL*/     {'x', 'x', '+', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*FLUSH*/   {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*LIST*/    {' ', '1', '1', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', '1', '1', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'x'},
++/*ADDSRV*/  {'x', 'x', '+', 'x', 'x', 'x', '+', ' ', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*DELSRV*/  {'x', 'x', '+', 'x', 'x', 'x', '+', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*EDITSRV*/ {'x', 'x', '+', 'x', 'x', 'x', '+', ' ', ' ', ' ', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*TIMEOUT*/ {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*STARTD*/  {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' ', 'x', 'x'},
++/*STOPD*/   {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', ' ', 'x', 'x'},
++/*RESTORE*/ {'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*SAVE*/    {' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
++/*ZERO*/    {'x', 'x', ' ', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'},
+ };
+ 
+ /* printing format flags */
+@@ -389,6 +391,7 @@ parse_options(int argc, char **argv, struct ipvs_command_entry *ce,
+ 		{"sort", '\0', POPT_ARG_NONE, NULL, 'o'},
+ 		{"exact", 'X', POPT_ARG_NONE, NULL, 'X'},
+ 		{"ipv6", '6', POPT_ARG_NONE, NULL, '%'},
++		{"ops", 'O', POPT_ARG_NONE, NULL, 'O'},
+ 		{NULL, 0, 0, NULL, 0}
+ 	};
+ 
+@@ -491,10 +494,14 @@ parse_options(int argc, char **argv, struct ipvs_command_entry *ce,
+ 			break;
+ 		case 'p':
+ 			set_option(options, OPT_PERSISTENT);
+-			ce->svc.flags = IP_VS_SVC_F_PERSISTENT;
++			ce->svc.flags |= IP_VS_SVC_F_PERSISTENT;
+ 			ce->svc.timeout =
+ 				parse_timeout(optarg, 1, MAX_TIMEOUT);
+ 			break;
++		case 'O':
++			set_option(options, OPT_ONEPACKET);
++			ce->svc.flags |= IP_VS_SVC_F_ONEPACKET;
++			break;
+ 		case 'M':
+ 			set_option(options, OPT_NETMASK);
+ 			if (ce->svc.af != AF_INET6) {
+@@ -696,10 +703,15 @@ static int process_options(int argc, char **argv, int reading_stdin)
+ 	if (ce.cmd == CMD_ADD || ce.cmd == CMD_EDIT) {
+ 		/* Make sure that port zero service is persistent */
+ 		if (!ce.svc.fwmark && !ce.svc.port &&
+-		    (ce.svc.flags != IP_VS_SVC_F_PERSISTENT))
++		    (!(ce.svc.flags & IP_VS_SVC_F_PERSISTENT)))
+ 			fail(2, "Zero port specified "
+ 			     "for non-persistent service");
+ 
++		if (ce.svc.flags & IP_VS_SVC_F_ONEPACKET &&
++		    !ce.svc.fwmark && ce.svc.protocol != IPPROTO_UDP)
++			fail(2, "One-Packet Scheduling is only "
++			    "for UDP virtual services");
++
+ 		/* Set the default scheduling algorithm if not specified */
+ 		if (strlen(ce.svc.sched_name) == 0)
+ 			strcpy(ce.svc.sched_name, DEF_SCHED);
+@@ -1087,6 +1099,7 @@ static void usage_exit(const char *program, const int exit_status)
+ 		"  --persistent-conn                   output of persistent connection info\n"
+ 		"  --nosort                            disable sorting output of service/server entries\n"
+ 		"  --sort                              does nothing, for backwards compatibility\n"
++		"  --ops          -O                   one-packet scheduling\n"
+ 		"  --numeric      -n                   numeric output of addresses and ports\n",
+ 		DEF_SCHED);
+ 
+@@ -1419,6 +1432,9 @@ print_service_entry(ipvs_service_entry_t *se, unsigned int format)
+ 					printf(" -M %i", se->netmask);
+ 				}
+ 		}
++		if (se->flags & IP_VS_SVC_F_ONEPACKET) {
++			printf(" -O");
++		}
+ 	} else if (format & FMT_STATS) {
+ 		printf("%-33s", svc_name);
+ 		print_largenum(se->stats.conns, format);
+@@ -1447,6 +1463,9 @@ print_service_entry(ipvs_service_entry_t *se, unsigned int format)
+ 				if (se->netmask != 128)
+ 					printf(" mask %i", se->netmask);
+ 		}
++		if (se->flags & IP_VS_SVC_F_ONEPACKET) {
++			printf(" ops");
++		}
+ 	}
+ 	printf("\n");
+ 
+diff --git a/libipvs/ip_vs.h b/libipvs/ip_vs.h
+index 2a6ffce..9cdad51 100644
+--- a/libipvs/ip_vs.h
++++ b/libipvs/ip_vs.h
+@@ -28,6 +28,7 @@
+  */
+ #define IP_VS_SVC_F_PERSISTENT	0x0001		/* persistent port */
+ #define IP_VS_SVC_F_HASHED	0x0002		/* hashed entry */
++#define IP_VS_SVC_F_ONEPACKET	0x0004		/* one-packet scheduling */
+ 
+ /*
+  *      IPVS sync daemon states

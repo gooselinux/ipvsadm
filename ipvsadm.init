@@ -1,0 +1,195 @@
+#!/bin/bash
+#
+# Startup script handle the initialisation of LVS
+# chkconfig: - 28 72
+# description: Initialise the Linux Virtual Server
+# config: /etc/sysconfig/ipvsadm
+#
+### BEGIN INIT INFO
+# Provides: ipvsadm
+# Required-Start: $local_fs $network $named
+# Required-Stop: $local_fs $remote_fs $network
+# Short-Description: Initialise the Linux Virtual Server
+# Description: The Linux Virtual Server is a highly scalable and highly
+#   available server built on a cluster of real servers, with the load
+#   balancer running on Linux.
+### END INIT INFO
+
+# Source function library
+. /etc/rc.d/init.d/functions
+
+IPVSADM=ipvsadm
+IPVSADMRESTORE=${IPVSADM}-restore
+IPVSADMSAVE=${IPVSADM}-save
+# Saved IPVS data
+IPVSADM_DATA=/etc/sysconfig/$IPVSADM
+# Configuration
+IPVSADM_CONFIG=/etc/sysconfig/${IPVSADM}-config
+IPVS=ip_vs
+PROC_IPVS=/proc/net/$IPVS
+VAR_SUBSYS_IPVSADM=/var/lock/subsys/$IPVSADM
+
+if [ ! -x /sbin/$IPVSADM ]; then
+    echo -n $"${IPVSADM}: /sbin/$IPVSADM does not exist."; warning; echo
+    exit 5
+fi
+
+# Old or new modutils
+/sbin/modprobe --version 2>&1 | grep -q module-init-tools \
+    && NEW_MODUTILS=1 \
+    || NEW_MODUTILS=0
+
+# Default IPVSADM configuration:
+IPVS_MODULES_UNLOAD="yes"
+IPVS_SAVE_ON_STOP="no"
+IPVS_SAVE_ON_RESTART="no"
+IPVS_STATUS_NUMERIC="yes"
+
+# Load IPVSADM configuration.
+[ -f "$IPVSADM_CONFIG" ] && . "$IPVSADM_CONFIG"
+
+rmmod_r() {
+    # Unload module with all referring modules.
+    # At first all referring modules will be unloaded, then the module itself.
+    local mod=$1
+    local ret=0
+    local ref=
+
+    # Get referring modules.
+    # New modutils have another output format.
+    [ $NEW_MODUTILS = 1 ] \
+        && ref=$(lsmod | awk "/^${mod}[[:space:]]/ { print \$4; }" | tr ',' ' ') \
+        || ref=$(lsmod | grep ^${mod} | cut -d "[" -s -f 2 | cut -d "]" -s -f 1)
+
+    # recursive call for all referring modules
+    for i in $ref; do
+        rmmod_r $i
+        let ret+=$?;
+    done
+
+    # Unload module.
+    # The extra test is for 2.6: The module might have autocleaned,
+    # after all referring modules are unloaded.
+    if grep -q "^${mod}" /proc/modules ; then
+        modprobe -r $mod > /dev/null 2>&1
+        res=$?
+        [ $res -eq 0 ] || echo -n " $mod"
+        let ret+=$res;
+    fi
+
+    return $ret
+}
+
+start() {
+    # Do not start if there is no config file.
+    [ ! -f "$IPVSADM_DATA" ] && return 6
+
+    # check if ipvs module load is deactivated
+    if grep -qIsE "^install[[:space:]]+${IPVS}[[:space:]]+/bin/(true|false)" /etc/modprobe.conf /etc/modprobe.d/* ; then
+        echo $"${IPVSADM}: ${IPVS} is disabled."
+        return 150
+    fi
+
+    # If we don't clear these first, we might be adding to pre-existing rules.
+    action $"${IPVSADM}: Clearing the current IPVS table:" $IPVSADM -C
+
+    echo -n $"${IPVSADM}: Applying IPVS configuration: "
+    $IPVSADMRESTORE < ${IPVSADM_DATA}
+    if [ $? -eq 0 ];then success; echo; else failure; echo; return 1;fi
+
+    touch $VAR_SUBSYS_IPVSADM
+}
+
+stop() {
+    # Do not stop if ipvs module is not loaded.
+    [ ! -e "$PROC_IPVS" ] && return 0
+
+    action $"${IPVSADM}: Clearing the current IPVS table:" $IPVSADM -C
+
+    ret=0
+
+    if [ "x$IPVS_MODULES_UNLOAD" = "xyes" ]; then
+        action $"${IPVSADM}: Unloading modules:" rmmod_r $IPVS
+        [ $? -ne 0 ] && ret=1
+    fi
+
+    rm -f $VAR_SUBSYS_IPVSADM
+
+    return $ret
+}
+
+status() {
+    # Do not print status if lockfile is missing and ipvs modules are not
+    # loaded.
+    if [ ! -f "$VAR_SUBSYS_IPVSADM" -a ! -e "$PROC_IPVS" ]; then
+        echo $"${IPVSADM}: IPVS is not running."
+        return 3
+    fi
+
+    # Do show status if ipvs module is not loaded.
+    if [ ! -e "$PROC_IPVS" ];then
+        echo $"${IPVSADM}: IPVS module is not loaded."
+        return 3
+    fi
+
+    NUM=""
+    [ "x$IPVS_STATUS_NUMERIC" = "xyes" ] && NUM="-n"
+
+    $IPVSADM -L $NUM && echo
+}
+
+save() {
+    # Check if module is loaded
+    [ ! -e "$PROC_IPVS" ] && return 0
+
+    echo -n $"${IPVSADM}: Saving IPVS table to ${IPVSADM_DATA}: "
+    $IPVSADMSAVE -n > ${IPVSADM_DATA} 2>/dev/null
+    if [ $? -eq 0 ];then success; echo; else failure; echo; return 1;fi
+
+    return 0
+}
+
+restart() {
+    [ "x$IPVS_SAVE_ON_RESTART" = "xyes" ] && save
+    stop
+    start
+}
+
+# See how we were called.
+case "$1" in
+    start)
+        [ -f "$VAR_SUBSYS_IPVSADM" ] && exit 0
+
+        # If we have no configuration, save the current one
+        [ -f ${IPVSADM_DATA} ] || save
+        start
+        RETVAL=$?
+        ;;
+    stop)
+        [ "x$IPVS_SAVE_ON_STOP" = "xyes" ] && save
+        stop
+        RETVAL=$?
+        ;;
+    restart|force-reload)
+        restart
+        RETVAL=$?
+        ;;
+    reload)
+        # Start will flush everything, so it counts as a reload
+        start
+        RETVAL=$?
+        ;;
+    status)
+        status
+        RETVAL=$?
+        ;;
+    save)
+        save
+        RETVAL=$?
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|force-reload|reload|status|save}"
+        RETVAL=2
+esac
+
+exit $RETVAL

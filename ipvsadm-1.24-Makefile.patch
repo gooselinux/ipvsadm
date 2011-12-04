@@ -1,0 +1,23 @@
+diff -Naupr ipvsadm-1.24.orig/Makefile ipvsadm-1.24/Makefile
+--- ipvsadm-1.24.orig/Makefile	2004-01-10 10:39:03.000000000 +0100
++++ ipvsadm-1.24/Makefile	2007-08-24 16:08:21.000000000 +0200
+@@ -87,16 +87,15 @@ ipvsadm:	$(OBJS) $(STATIC_LIBS)
+ 
+ install:        all
+ 		if [ ! -d $(SBIN) ]; then $(MKDIR) -p $(SBIN); fi
+-		$(INSTALL) -m 0755 -s ipvsadm $(SBIN)
++		$(INSTALL) -m 0755 ipvsadm $(SBIN)
+ 		$(INSTALL) -m 0755 ipvsadm-save $(SBIN)
+ 		$(INSTALL) -m 0755 ipvsadm-restore $(SBIN)
+ 		[ -d $(MAN) ] || $(MKDIR) -p $(MAN)
+ 		$(INSTALL) -m 0644 ipvsadm.8 $(MAN)
+ 		$(INSTALL) -m 0644 ipvsadm-save.8 $(MAN)
+ 		$(INSTALL) -m 0644 ipvsadm-restore.8 $(MAN)
+-		if [ -d $(INIT) ]; then \
+-		  $(INSTALL) -m 0755 ipvsadm.sh $(INIT)/ipvsadm; \
+-		fi
++		[ -d $(INIT) ] || $(MKDIR) -p $(INIT)
++		$(INSTALL) -m 0755 ipvsadm.sh $(INIT)/ipvsadm
+ 
+ clean:
+ 		rm -f ipvsadm $(NAME).spec $(NAME)-$(VERSION).tar.gz
